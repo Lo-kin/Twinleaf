@@ -1,0 +1,12 @@
+{
+    "current_usp" : -1,
+    "current_knife" : -1,
+    "current_player":-1,
+    "usp" : [],
+    "knife" : [2],
+    "player":[]
+}
+
+{"current_usp":-1,"current_knife":-1,"current_player":-1,"usp":[],"knife":[],"player":[]}
+
+{"current_usp":-1,"current_knife":-1,"usp":[],"player":[]}
