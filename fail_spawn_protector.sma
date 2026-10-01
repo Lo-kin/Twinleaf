@@ -61,6 +61,7 @@ public plugin_precache()
 	
 	new szMapName[32]
 	get_mapname(szMapName, charsmax(szMapName))
+	strtolower(szMapName)
 	format(g_sEntFile, charsmax(g_sEntFile), "%s/fw_file", g_sEntFile)
 
 	if(!dir_exists(g_sEntFile))
@@ -266,7 +267,7 @@ public SpawnPointCount()
 		server_print("[Fail Spawn Protector] Server is reloading")
 		
 		// Reload server?
-		server_cmd("reload")
+		//server_cmd("reload")
 	}
 }
 

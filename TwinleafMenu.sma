@@ -1,18 +1,24 @@
+#include <Twinleaf>
 #include <amxmodx>
 #include <fakemeta>	
 #include <cstrike>
 #include <engine>
-#include <Twinleaf>
 #include <hamsandwich>
 #include <sqlx>
+#include <xs>
 
 #define SHOWQQ_TASK 521734
 
+new bool:tr_open[33];
+new tr_select[33];
+new tr_lock[33];
+new tr_lastmenu[33];
+
 public plugin_init()
 {
-    register_plugin("Twinleaf 菜单", "1.0.0", "Tredam" , "github.com/Lo-kin" , "双叶服务器菜单");
-	register_clcmd("say menu" , "MainMenu" , -1 , "No test");
-	register_clcmd("say help" , "ShowMOTD" , -1 , "No test");
+    register_plugin("Twinleaf 菜单", PluginVersion , PluginAuthor , PluginLink , "双叶服务器菜单");
+	register_clcmd("say menu" , "MainMenu");
+	register_clcmd("say help" , "ShowMOTD");
 	RegisterHam(Ham_Item_Deploy, "weapon_knife", "Ham_Knife_Deploy_post", 1);
 	RegisterHam(Ham_Item_Deploy, "weapon_usp", "Ham_Usp_Deploy_post", 1);
 
@@ -21,7 +27,82 @@ public plugin_init()
 
 	RegisterHamPlayer(Ham_Spawn, "Ham_Spawn_post", 1);
 	set_task(45.0, "ShowQQ", SHOWQQ_TASK , "" , 0 ,"b");
+
+	//register_forward(FM_TraceLine, "traceline_forward" , 1);
 }
+
+public EntityMenu(id)
+{
+	tr_open[id] = true;
+	new menu = menu_create("实体信息" , "EntityMenuHandeler");
+	tr_lastmenu[id] = menu;
+	if (tr_select[id] >= 33)
+	{
+		new entClass[32];
+		new entName[32];
+		new Float:entPos[3];
+		new Float:entOnlyTrigger
+		pev(tr_select[id] , pev_classname , entClass , 32);
+		pev(tr_select[id] , pev_targetname , entName , 32);
+
+		new Float:entmin[3];
+        new Float:entmax[3];
+        entity_get_vector(tr_select[id] , EV_VEC_absmin , entmin);
+        entity_get_vector(tr_select[id] , EV_VEC_size , entmax);
+        xs_vec_add_scaled(entmin , entmax , 0.5 , entPos);
+
+		pev(tr_select[id] , pev_spawnflags , entOnlyTrigger);
+
+		new entMessage[64];
+		format(entMessage , 64 , "实体类型:[%s]" , entClass);
+		menu_addtext2(menu , entMessage);
+		format(entMessage , 64 , "实体名称:[%s]" , entName);
+		menu_addtext2(menu , entMessage);
+		format(entMessage , 64 , "实体坐标:[%.2f , %.2f , %.2f]" , entPos[0] , entPos[1] , entPos[2]);
+		menu_addtext2(menu , entMessage);
+		format(entMessage , 64 , "实体仅由其他实体触发:[%f]" , entOnlyTrigger);
+		menu_addtext2(menu , entMessage);
+		menu_additem(menu , "删除实体");
+		menu_additem(menu , "关闭追踪");
+	}
+	else
+	{
+		menu_addtext2(menu , "未瞄准到任何实体");
+	}
+	menu_display(id , menu);
+}
+
+public EntityMenuHandeler(id , menu , item)
+{
+	if (item == 3)
+	{
+		set_pev(tr_select[id] , pev_spawnflags , 0.0);
+	}
+	if (item == 4)
+	{
+		remove_entity(tr_select[id]);
+		tr_select[id] = -1;
+	}
+	if (item == 5)
+	{
+		tr_open[id] = false
+	}
+	//menu_destroy(menu);
+}
+
+public traceline_forward(Float:start[3], Float:end[3], conditions, id, trace)
+{
+	if (tr_open[id] == true)
+	{
+		new hitent = get_tr2(trace , TR_pHit);
+		if (hitent != -1 && hitent >= 33)
+		{
+			menu_destroy(tr_lastmenu[id]);
+			tr_select[id] = hitent;
+			EntityMenu(id);
+		}
+	}
+} 
 
 public ShowMOTD(id)
 {
@@ -31,6 +112,7 @@ public ShowMOTD(id)
 public ShowQQ()
 {
 	client_print_color(0 ,0 , "^4[雙葉]:^1欢迎加入双叶公园QQ群 :^4 1098491779");
+	client_print_color(0 ,0 , "^4[雙葉]:^1按下[Y]输入^3menu^1打开服务器菜单");
 }
 
 public MainMenu(id)
@@ -51,6 +133,8 @@ public MainMenu(id)
 	menu_additem(menu , "MP3 菜单");
 	menu_additem(menu , "小工具");
 	menu_additem(menu , "列出所有服务器");
+
+	menu_additem(menu , "管理菜单" , "" , ADMIN_MENU);
 	menu_setprop(menu , MPROP_EXIT, MEXIT_ALL);
 	menu_display(id , menu);
 }
@@ -80,11 +164,48 @@ public MainSelection(id , menu , item)
 		{
 			ServerMenu(id);
 		}
-
+		case 6:
+		{
+			if (get_user_flags(id) & ADMIN_MENU)
+			{
+				AdminMenu(id);
+			}
+			else
+			{
+				client_print_color(id , 0 , "^4[雙葉]:^1你没有权限访问管理菜单");
+			}
+		}
 	}
 	
 	menu_destroy(menu);
 }
+
+public AdminMenu(id)
+{
+	new menu = menu_create("[雙葉]:\d管理员菜单" , "AdminMenuHandler");
+	menu_additem(menu , "多模组换图菜单");
+	menu_additem(menu , "AMX指令菜单");
+	menu_additem(menu , "更改实体属性")
+	menu_display(id , menu);
+}
+
+public AdminMenuHandler(id , menu , item)
+{
+	if (item == 0)
+	{
+		client_cmd(id , "amx_multimod");
+	}
+	else if (item == 1)
+	{
+		client_cmd(id , "amxmodmenu");
+	}
+	else if (item == 2)
+	{
+		//EntityMenu(id);
+	}
+	menu_destroy(menu);
+}
+
 
 public UserInfoMenu(id)
 {
@@ -97,7 +218,7 @@ public UserInfoMenu(id)
 	new UserItemData[ItemData];
 	new showinfo[128];
 	new signtime[64];
-	
+	menu_additem(menu , "设置所有购买项到默认")
 	get_user_sign_time(id , signtime);
 	formatex(showinfo , 128 , "\d注册时间:\w%s" , signtime);
 	menu_additem(menu , showinfo);
@@ -125,6 +246,14 @@ public UserInfoMenu(id)
 
 public UserInfoSelection(id , menu , item)
 {
+	if (item == 0)
+	{
+		for (new i = 0;i < ItemType;i ++)
+		{
+			set_user_current_model(id , -1 , i);
+		}
+		client_print(id , 0 , "全部重置好了")
+	}
 	menu_destroy(menu);
 }
 
@@ -160,17 +289,75 @@ public StoreMenu(id)
 	menu_additem(menu , "小刀模型");
 	menu_additem(menu , "USP模型");
 	menu_additem(menu , "称号小摊");
+	menu_additem(menu , "购买RPG-7(100exp)");
+	menu_additem(menu , "摸摸双叶头");
 	menu_display(id , menu);
 }
 
 public StoreSelection(id , menu , item)
 {
+	menu_destroy(menu);
 	play_soundeffect(id , SE_OpenMenu);
-	if (item >= 0 && item <= ItemType)
+	if (item >= 0 && item < ItemType)
 	{
 		PurchaseItemMenu(id , item);
 	}
-	menu_destroy(menu);
+	else if (item == 4)
+	{
+		/*
+		if (get_user_Experience(id) < 100 && true == false)
+		{
+			client_print_color(id , 0 , "^4[雙葉]:^1经验不足, 无法购买RPG-7");
+		}
+		else if( callfunc_begin("give_rpg7","weapon_rpg7.amxx") == 1) 
+		{
+			callfunc_push_int(id);
+			callfunc_end();
+			set_user_Experience_delta(id , -100);
+		}*/
+	}
+	else if (item == 5)
+	{
+		new motion = random_num(0 , 10000);
+		if (motion >= 9990)
+		{
+			client_print_color(id , 0 , "^4[雙葉]:^1你摸了摸双叶的头, 双叶超开心");
+			set_user_LeafCoin_delta(id , 10000);
+		}
+		else if (motion >= 9900)
+		{
+			client_print_color(id , 0 , "^4[雙葉]:^1你摸了摸双叶的头, 双叶很开心");
+			set_user_LeafCoin_delta(id , 1000);
+		}
+		else if (motion >= 9000)
+		{
+			client_print_color(id , 0 , "^4[雙葉]:^1你摸了摸双叶的头, 双叶有点开心");
+			set_user_LeafCoin_delta(id , 1);
+		}
+		else if (motion >= 8000)
+		{
+			client_print_color(id , 0 , "^4[雙葉]:^1你摸了摸双叶的头, 双叶有点不开心");
+			set_user_LeafCoin_delta(id , -1);
+		}
+		else if (motion >= 7000)
+		{
+			client_print_color(id , 0 , "^4[雙葉]:^1你摸了摸双叶的头, 双叶很不开心");
+			set_user_LeafCoin_delta(id , -5);
+		}
+		else if (motion >= 6550)
+		{
+			client_print_color(id , 0 , "^4[雙葉]:^1你摸了摸双叶的???, 双叶//O//w///O/害羞了");
+			set_user_Experience_delta(id , 10);
+		}
+		else
+		{
+			client_print_color(id , 0 , "^4[雙葉]:^1你摸了摸双叶的头, 双叶哈气了");
+			set_user_LeafCoin_delta(id , -10);
+		}
+		StoreMenu(id);
+	}
+
+	
 }
 
 public PurchaseItemMenu(id , mt)

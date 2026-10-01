@@ -3,6 +3,7 @@
 #include <hamsandwich>
 #include <fakemeta>
 #include <xs>
+#include <fakemeta_util>
 
 #define Block_size 64
 #define BlockStart_x 0
@@ -19,6 +20,9 @@ enum _:SoundGroup
     SG_ZombieHurt,
     SG_PlayerBreath,
     SG_PlayerHurt,
+    SG_WavePrepare,
+    SG_WaveStart,
+    SG_WaveEnd,
 }
 enum _:SoundList
 {
@@ -34,8 +38,11 @@ new SG_List[SoundGroup][SoundList] =
     {2 , {27 , 28 }},
     {2 , {11 , 12 }},
     {1 , {13 }},
+    {1 , {17 }},
+    {3 , {18 , 19 , 20 }},
+    {3 , {14 , 15 , 16 }}
 };
-new SoundRootPath[64] = "sound/Twinleaf/LeafGuard/";
+new SoundRootPath[64] = "Twinleaf/LeafGuard/";
 new SoundStack[29][64] = 
 {
     "bell.wav",
@@ -96,7 +103,8 @@ enum _:MonsterInfo
     MI_TargetBarrier,
     MI_KillReward,
     bool:MI_IsAlive,
-    Float:MI_CreateTime
+    Float:MI_CreateTime,
+    MI_AliveTick
 }
 new MonsterList[256][MonsterInfo];
 new MonsterCount = 0;
@@ -174,13 +182,15 @@ new TotalWaveInfo[TotalWave] = {30 , 0 , 30.0 , ...};
 
 public plugin_init()
 {
-    register_plugin("Twinleaf LeafGuard", "0.0.1", "Tredam" , "github.com/Lo-kin" , "");
+    register_plugin("Twinleaf LeafGuard",  PluginVersion , PluginAuthor , PluginLink , "");
     
     register_think("npc_zombie" , "npc_think");
     //RegisterHam(Ham_TakeDamage , "info_target" , "DmgZombie");
     RegisterHam(Ham_Killed , "info_target" , "KilledZombie");
 
+    register_clcmd("say sl" , "showlist");
     register_clcmd("say start" , "SpwanWave");
+    register_clcmd("say weapon" , "WeaponStore");
     register_forward(FM_TraceLine, "traceline_forward" , 1);
     set_task(0.1 , "ListenUserKey" , 1919810 , _ , _ ,"b");
     Init();
@@ -202,11 +212,6 @@ public ShowHud(string[])
     show_hudmessage(0, string);
 }
 
-public WeaponMenu(id)
-{
-    
-}
-
 public ListenUserKey()
 {
     for (new playerPos = 0;playerPos < 32;playerPos ++)
@@ -219,12 +224,12 @@ public ListenUserKey()
                 if (get_gametime() - PI_List[playerPos][PI_LastRestoreTime] >= PI_List[playerPos][PI_RestoreDuration])
                 {
                     PI_List[playerPos][PI_LastRestoreTime] = get_gametime();
-                    for (new i = 1 ; i < BI_Count;i ++)
+                    for (new i = 0 ; i < BI_Count;i ++)
                     {
-                        console_print(0 , "On Using %d " ,playerPos );
+                        console_print(0 , "On Using %d " ,playerPos);
                         if (EntityRange(ent , BI_List[i][BI_EntID]) <= 64.0)
                         {
-                            DeltaEntityHealth(i , ent , 20);
+                            DeltaEntityHealth(BI_List[i][BI_EntID] , ent , 20.0);
                             PI_List[playerPos][PI_RestoreCount] ++;
                             console_print(0 ,"match %d" , i);
                             break;
@@ -232,6 +237,10 @@ public ListenUserKey()
                         
                     }
                 }
+            }
+            if (pev(ent , pev_button) & IN_RELOAD)
+            {
+                WeaponStore(ent , 0);
             }
         }
     }
@@ -243,11 +252,6 @@ public KilledZombie(this, idattacker, shouldgib)
     {
         if (MonsterList[i][MI_EntID] == this)
         {
-            /*
-            new hudmsg[128];
-            format(hudmsg , 128 , "杀死 %s , 获得 %d$" , MT_NameList[MonsterList[i][MI_Type]] , MonsterList[i][MI_KillReward]);
-            ShowHud(hudmsg);*/
-            
             for (new j = 0;j < 32;j ++)
             {
                 if (PI_List[j][PI_ID] == idattacker)
@@ -315,7 +319,7 @@ public Init()
     {
         new group[32];
         entity_get_string(i , EV_SZ_targetname , group , 32);
-        new targetNum = str_to_num(group);
+        new targetNum = str_to_num(group); 
         if (targetNum != 0)
         {
             new Float:entmin[3];
@@ -326,7 +330,7 @@ public Init()
             BI_List[BI_Count][BI_EntID] = i;
             BI_List[BI_Count][BI_Num] = targetNum;
             BI_List[BI_Count][BI_MaxHealth] = 1000.0;
-            BI_List[BI_Count][BI_Health] = 1000.0;
+            BI_List[BI_Count][BI_Health] = 100.0;
             BI_List[BI_Count][BI_IsBreak] = false;
             BI_Count ++;     
         }
@@ -372,6 +376,17 @@ public Init()
     }
 }
 
+public showlist()
+{
+    for (new i = 0;i < 256;i ++)
+    {
+        if (MonsterList[i][MI_IsAlive] == true)
+        {
+            console_print(0 , "Zombie %d : %d %f %d" , i , MonsterList[i][MI_EntID] , MonsterList[i][MI_Health] , MonsterList[i][MI_TargetBarrier]);
+        }
+    }
+}
+
 public client_putinserver(id)
 {
     for (new i = 0;i < 32; i ++)
@@ -381,6 +396,7 @@ public client_putinserver(id)
             PI_List[i][PI_ID] = id;
             PI_List[i][PI_Money] = 0;
             PI_List[i][PI_IsEmpty] = false;
+            PI_List[i][PI_RestoreDuration] = 1.0;
             PI_List[i][PI_Speed] = 250;
             copy(PI_List[i][PI_Equips] , 0 , {0 , 0 , 0});
             PI_Count ++;
@@ -395,9 +411,9 @@ public client_disconnected(id , bool:drop , msg[] , len)
     {
         for (new i = 0;i < 32;i ++)
         {
-            if (PI_List[id][PI_ID] == id)
+            if (PI_List[i][PI_ID] == id)
             {
-                PI_List[id][PI_IsEmpty] = true;
+                PI_List[i][PI_IsEmpty] = true;
                 PI_Count --;
                 break;
             }
@@ -407,6 +423,20 @@ public client_disconnected(id , bool:drop , msg[] , len)
 
 public SpwanWave()
 {
+    new alive_players[32];
+    new alive_count = 0;
+    get_players(alive_players , alive_count , "a");
+    if (alive_count == 0)
+    {
+        new hudmsg[128];
+        format(hudmsg , 128 , "回合失败" , TotalWaveInfo[TW_Current] , TotalWaveInfo[TW_Count] , TotalWaveInfo[TW_WaveGap])
+        ShowHud(hudmsg);
+        for (new i = 0; i < 256; i ++)
+        {
+            MonsterList[i][MI_IsAlive] = false;
+        }
+        return;
+    }
     new current_wave = TotalWaveInfo[TW_Current];
     if (current_wave >= 0 && current_wave < 64)
     {
@@ -421,9 +451,10 @@ public SpwanWave()
                     new hudmsg[128];
                     format(hudmsg , 128 , "回合开始" , TotalWaveInfo[TW_Current] , TotalWaveInfo[TW_Count] , TotalWaveInfo[TW_WaveGap])
                     ShowHud(hudmsg);
+                    EmitSound(0 , SG_WaveStart);
                 }
                 console_print(0 , "Wave %d / %d" , AW_List[aw_pos][AW_CurrentSpwan] + 1 , AW_List[aw_pos][AW_SpwanCount]); 
-                OnSpwan(random_num(0 , BI_Count) , AW_List[aw_pos][AW_SpwanTypeList][zm_pos]);
+                OnSpwan(AW_List[aw_pos][AW_SpwanCount] % BI_Count , AW_List[aw_pos][AW_SpwanTypeList][zm_pos]);
                 AW_List[aw_pos][AW_CurrentSpwan] += 1;
                 set_task(AW_List[aw_pos][AW_WaitTime] , "SpwanWave");
             }
@@ -436,6 +467,7 @@ public SpwanWave()
                 new hudmsg[128];
                 format(hudmsg , 128 , "%d / %d 已完成 , %f 秒后下一回合" , TotalWaveInfo[TW_Current] , TotalWaveInfo[TW_Count] , TotalWaveInfo[TW_WaveGap])
                 ShowHud(hudmsg);
+                EmitSound(0 , SG_WaveEnd);
             }
         }
     }
@@ -450,11 +482,19 @@ public OnSpwan(MSP , type)
             new ent = CreateZombie(MSP_List[MSP][MSP_Position] , type);
             if (ent > 0)
             {
-                copyf(MonsterList[MonsterCount] , MonsterInfo , MT_List[type]);
-                MSP_List[MSP][MSP_SpwanCount] ++;
-                MonsterList[MonsterCount][MI_EntID] = ent;
-                MonsterList[MonsterCount][MI_CreateTime] = get_gametime();
-                MonsterList[MonsterCount][MI_TargetBarrier] = MSP_List[MSP][MSP_Target];
+                for (new j = 0;j < 256;j ++)
+                {
+                    if (MonsterList[j][MI_IsAlive] == false)
+                    {
+                        MonsterList[j][MI_IsAlive] = true;
+                        copyf(MonsterList[j] , MonsterInfo , MT_List[type]);
+                        MSP_List[MSP][MSP_SpwanCount] ++;
+                        MonsterList[j][MI_EntID] = ent;
+                        MonsterList[j][MI_CreateTime] = get_gametime();
+                        MonsterList[j][MI_TargetBarrier] = MSP_List[MSP][MSP_Target];
+                        break;
+                    }
+                }
                 MonsterCount++;
             }
             return i;
@@ -462,8 +502,6 @@ public OnSpwan(MSP , type)
     }
     return -1;
 }
-
-
 
 public CreateZombie(Float:origin[3] , type)
 {
@@ -481,7 +519,7 @@ public CreateZombie(Float:origin[3] , type)
     entity_set_string(ent , EV_SZ_classname , "npc_zombie");
     entity_set_string(ent , EV_SZ_targetname , MT_NameList[type]);
     entity_set_model(ent , MT_ModelList[type]);
-    entity_set_int(ent , EV_INT_solid , SOLID_BBOX);
+    entity_set_int(ent , EV_INT_solid , SOLID_SLIDEBOX);
     entity_set_int(ent , EV_INT_movetype , MOVETYPE_STEP);
     
     entity_set_byte(ent,EV_BYTE_controller1,125);
@@ -512,11 +550,15 @@ public npc_think(iEnt)
     new targetid = get_closest_player(iEnt);
     new Float:targetPos[3];
     pev(targetid , pev_origin , targetPos);
-    new MPos = 0;
+    new MPos = -1;
     for (new i = 0;i < 256;i ++)
     {
         if (iEnt == MonsterList[i][MI_EntID])
         {
+            if (MonsterList[i][MI_IsAlive] == false)
+            {
+                return;
+            }
             if (MonsterList[i][MI_TargetBarrier] >= 0 && MonsterList[i][MI_TargetBarrier] < BI_Count)
             {
                 new target_b = MonsterList[i][MI_TargetBarrier];
@@ -529,14 +571,23 @@ public npc_think(iEnt)
             MPos = i;
         }
     }
-    entity_set_aim(iEnt, targetPos , MonsterList[MPos][MI_Speed]);
-    ZombieTryAttack(MPos , targetid);
-
-    if ((get_gametime() - MonsterList[MPos][MI_TargetBarrier]) / 5 == 0)
+    if (MPos != -1)
     {
-        EmitSound(iEnt , SG_ZombieBreathe);
-    }   
-    set_pev(iEnt, pev_nextthink, get_gametime() + 0.01)
+        entity_set_aim(iEnt, targetPos , MonsterList[MPos][MI_Speed]);
+        ZombieTryAttack(MPos , targetid);
+        
+        MonsterList[MPos][MI_AliveTick] ++;
+        if (MonsterList[MPos][MI_AliveTick] % 500 == 0)
+        {
+            EmitSound(iEnt , SG_ZombieBreathe);
+        }   
+        set_pev(iEnt, pev_nextthink, get_gametime() + 0.01)
+    }
+    else
+    {
+        console_print(0 , "Zombie %d not found in MonsterList" , iEnt);
+        remove_entity(iEnt);
+    }
 }
 
 entity_set_aim(ent, const Float:origin[3] , const Float:velocity) 
@@ -606,7 +657,7 @@ public ZombieTryAttack(MIPos , victim)
             if (get_gametime() - MonsterList[MIPos][MI_LastAttackTime] >= MonsterList[MIPos][MI_AttackDuration])
             {
                 MonsterList[MIPos][MI_LastAttackTime] = get_gametime();
-                DeltaEntityHealth(victim , mEnt , MonsterList[MIPos][MI_Damage])
+                DeltaEntityHealth(victim , mEnt , -MonsterList[MIPos][MI_Damage])
                 return true;
             }
         }
@@ -646,15 +697,9 @@ public bool:SetEntityHealth(ent , Float:value)
             else if (value / BI_List[i][BI_MaxHealth] >= 0.2 && IsNegative == false)
             {
                 BI_List[i][BI_IsBreak] = false;
-                if (entity_get_int(BI_List[i][BI_EntID], EV_INT_solid ) != SOLID_BSP)
-                {
-                    entity_set_int(BI_List[i][BI_EntID], EV_INT_solid , SOLID_BSP);
-                }
+                entity_set_int(BI_List[i][BI_EntID], EV_INT_solid , SOLID_BSP);
             }
-            else
-            {
-                BI_List[i][BI_Health] = value;
-            }
+            BI_List[i][BI_Health] = value;
         }
     }
     set_pev(ent , pev_health , value);
@@ -679,7 +724,7 @@ public Float:DeltaEntityHealth(ent , source , Float:value)
             return BI_List[i][BI_Health];
         }
     }
-    ExecuteHamB(Ham_TakeDamage, ent, ent, source, value, DMG_CLUB);
+    ExecuteHamB(Ham_TakeDamage, ent, source, source, -value, DMG_CLUB);
     return pev(ent , pev_health);
 }
 
@@ -711,8 +756,74 @@ public EmitSound(ent , sgtype)
     if (sgtype >= 0 && sgtype < SoundGroup)
     {
         new path[128];
-        format(path , 128 , "%s%s" , SoundRootPath , SoundStack[SG_List[sgtype][SL_List][random_num(0 , SG_List[sgtype][SL_Count])]])
+        format(path , 128 , "%s%s" , SoundRootPath , SoundStack[SG_List[sgtype][SL_List][random_num(0 , SG_List[sgtype][SL_Count] - 1)]]);
         emit_sound(ent, CHAN_AUTO, path, VOL_NORM, 1, 0, PITCH_NORM);
+    }
+}
+
+enum _:WeaponItem
+{
+    WI_Cost,
+    WI_Name[32],
+    WI_Class[32],
+}
+const WeaponCount = 14;
+new WI_List[WeaponCount][WeaponItem] = {
+    {10 , "M4A1" , "weapon_m4a1"},
+    {15 , "AK47" , "weapon_ak47"},
+    {20 , "AWP" , "weapon_awp"},
+    {5 , "Glock18" , "weapon_glock18"},
+    {5 , "USP" , "weapon_usp"},
+    {5 , "Deagle" , "weapon_deagle"},
+    {5 , "P228" , "weapon_p228"},
+    {5 , "FiveSeven" , "weapon_fiveseven"},
+    {5 , "MP5" , "weapon_mp5navy"},
+    {5 , "TMP" , "weapon_tmp"},
+    {20 , "P90" , "weapon_p90"},
+    {5 , "Galil" , "weapon_galil"},
+    {5 , "Famas" , "weapon_famas"},
+    {50 , "M249" , "weapon_m249"},
+};
+
+public WeaponStore(id , page)
+{
+    new player = GetPlayer(id);
+    if (player < 0)
+    {
+        return;
+    }
+    new title[64];
+    format(title , 64 , "武器商店 - 金钱 %d$" , PI_List[player][PI_Money]);
+    new menu = menu_create(title , "WeaponStoreHandler");
+    for (new i = 0;i < WeaponCount;i ++)
+    {
+        if (WI_List[i][WI_Cost] > 0)
+        {
+            new item[64];
+            format(item , 64 , "%s - %d$" , WI_List[i][WI_Name] , WI_List[i][WI_Cost]);
+            menu_additem(menu , item);
+        }
+    }
+    menu_display(id , menu , page);
+}
+
+public WeaponStoreHandler(id , menu , item)
+{
+    menu_destroy(menu);
+    new player = GetPlayer(id);
+    if (item >= 0 && item < WeaponCount)
+    {
+        if (PI_List[player][PI_Money] >= WI_List[item][WI_Cost])
+        {
+            PI_List[player][PI_Money] -= WI_List[item][WI_Cost];
+            fm_give_item(id , WI_List[item][WI_Class]);
+            client_print_color(id , print_center , "^4[Store]^1购买 ^3%s ^1成功" , WI_List[item][WI_Name]);
+            WeaponStore(id , item / 7);
+        }
+        else
+        {
+            client_print_color(id , print_center , "^4[Store]^1购买 ^3%s ^1失败, 金钱不足" , WI_List[item][WI_Name]);
+        }
     }
 }
 
@@ -722,4 +833,16 @@ public copyf(Float:dest[] , const len ,const Float:source[])
     {
         dest[i] = source[i];   
     }
+}
+
+public GetPlayer(id)
+{
+    for (new i = 0;i < 32;i ++)
+    {
+        if (PI_List[i][PI_ID] == id)
+        {
+            return i;
+        }
+    }
+    return -1;
 }

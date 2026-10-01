@@ -3,6 +3,12 @@
 #endif
 #define _twinleaf_included
 
+new PluginAuthor[32] = "Tredam";
+new PluginVersion[32] = "1.1.0";
+new PluginLink[32] = "github.com/Lo-kin";
+
+new RemainModelSlot = 512;
+
 enum _:LotteryAwards
 {
     LA_Gray,
@@ -84,6 +90,42 @@ enum _:UserTitle
     UT_SpecialID[64],
 }
 
+enum TwoStatus
+{
+    TS_Frezze,
+    TS_Fire,
+    TS_FrezzeToFire,
+    TS_FireToFrezze
+}
+new TwoStatus:PlayerInput[32][IN_SCORE];
+
+public TwoStatus:GetStatus(TwoStatus:last , TwoStatus:now)
+{
+    if ((last == TS_Frezze || last == TS_FireToFrezze) && now == TS_Fire)
+    {
+        return TS_FrezzeToFire;
+    }
+    if ((last == TS_FrezzeToFire || last == TS_Fire ) && now == TS_Frezze)
+    {
+        return TS_FireToFrezze;
+    }
+    else
+    {
+        return now;
+    }
+}
+
+public GetPlayerInput(id)
+{
+    if (!is_user_alive(id) || !pev_valid(id))
+    {
+        return PLUGIN_CONTINUE;
+    }
+    PlayerInput[id][IK_Use] = GetStatus(pev(id , pev_button) & IN_USE , PlayerInput[id][IK_Use]);
+    PlayerInput[id][IK_Reload] = GetStatus(pev(id , pev_button) & IN_RELOAD , PlayerInput[id][IK_Reload]);
+    PlayerInput[id][IK_Alt1] = GetStatus(pev(id , pev_button) & IN_ALT1 , PlayerInput[id][IK_Alt1]);
+}
+
 native show_mma_list(const id);
 
 native show_mma_config(const id);
@@ -137,3 +179,5 @@ native user_purchase_item(const id ,const mdid ,const mt);
 native play_soundeffect(const id , const se);
 
 native tl_utils(const id);
+
+native push_say(const id , msg[]);

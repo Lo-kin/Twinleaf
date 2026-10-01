@@ -56,7 +56,7 @@ new bool:IsSwap;
 
 public plugin_init()
 {
-    register_plugin("Twinleaf 你画我猜", "1.1.0", "Tredam" , "github.com/Lo-kin" , "你画我猜");
+    register_plugin("Twinleaf 你画我猜",  PluginVersion , PluginAuthor , PluginLink , "你画我猜");
 	register_forward(FM_PlayerPreThink, "Draw")
 	register_clcmd("say /task" , "RollToNext" ,  -1 , "提问");
 	register_clcmd("say_team" , "Reply" ,  -1 , "填答案");
@@ -125,6 +125,8 @@ public Task(id)
 			get_user_name(id , PainterName , 128);
 			client_print_color(0 , id , "^4[TwT] ^3%s ^1 轮到你来画画了" , PainterName);
 			client_print_color(id , id , "^4[TwT] ^3%s ^1,你的主题是 %s" , PainterName , Answer);
+			client_print_color(id , id , "^4[TwT] ^1按下^3[E]^1画画 , 按下^3[R]^1清除画布");
+			client_print_color(0 , id , "^4[TwT] ^1按下^3[U]^1输入你的答案");
 			play_soundeffect(0 , SE_StartUp);
 			LastHintTime = get_gametime();
 		}
@@ -151,6 +153,7 @@ public Reply(id)
 		{
 			AddScore(id , false)
 			client_print_color(0 , id , "^4[TwT] ^3%s ^1回答正确，答案是 %s" , AnswerName , Answer);
+			set_user_LeafCoin_delta(id , 10);
 			IsAnswering = false;
 			ClearCanvas();
 			RollToNext(id);
@@ -435,14 +438,9 @@ new Float:LastCleanTime;
 public ClearCanvas()
 {
 	new Float:nowtime = get_gametime();
-	if (nowtime - LastCleanTime <= 1.0)
-	{
-		client_print_color(0 , PainterID , "^4[TwT] ^1清除画布过于频繁，请稍后再试");
-	}
-	else
+	if (nowtime - LastCleanTime >= 1.0)
 	{
 		LastCleanTime = nowtime;
-		HintStep = 0;
 		CanvasPointer = 0;
 		fm_cs_remove_decals()
 	}

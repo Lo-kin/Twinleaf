@@ -23,7 +23,16 @@ new JsonObjectNames[4][] = {
 };
 
 new SoundRootPath[32] = "sound/Twinleaf/SE";
-new SoundResource[SoundEffct][32] = {"lottery_process.wav" , "gain_item.wav" , "agree.wav" , "startup.wav" , "equip.wav" , "cost_money.wav" , "gain_money.wav" , "fail.wav" , "send_message.wav"};
+new SoundResource[SoundEffct][32] = {
+    "lottery_process.wav" ,
+     "gain_item.wav" ,
+      "agree.wav" ,
+       "startup.wav" ,
+        "equip.wav" ,
+         "cost_money.wav" ,
+          "gain_money.wav" ,
+           "fail.wav" ,
+            "send_message.wav"};
 
 new CurrentPlayers[32][UserData];
 new ModelStorage[ItemType][ItemStack];
@@ -34,14 +43,14 @@ new Handle:g_SqlTuple;
 
 public plugin_init()
 {
-    register_plugin("Twinleaf 模型", "1.0.0", "Tredam" , "github.com/Lo-kin" , "双叶后台数据管理");
+    register_plugin("Twinleaf 模型", PluginVersion , PluginAuthor , PluginLink, "双叶后台数据管理");
 
     //register_clcmd("say test" , "LotteryBegin" , -1 , "");
     //register_clcmd("say testlo" , "OnLottery" , -1 , "");
-    InitItemData(-1 , 0 , "默认" , "models/ttt/v_crowbar.mdl" , "models/ttt/p_crowbar.mdl" , ModelStorage[ IT_Knife][IS_Default]);
+    InitItemData(-1 , 0 , "默认" , "models/v_knife.mdl" , "models/p_knife.mdl" , ModelStorage[ IT_Knife][IS_Default]);
     InitItemData(-1 , 0 , "默认" , "models/v_usp.mdl" , "models/p_usp.mdl" , ModelStorage[IT_Usp][IS_Default]);
     InitItemData(-1 , 0 , "默认" , "models/player/gsg9/gsg9.mdl" , "gsg9" , ModelStorage[IT_Player][IS_Default])
-    InitItemData(-1 , 0 , "默认" , "" , "" , ModelStorage[IT_Title][IS_Default])
+    InitItemData(-1 , 0 , "没称号" , "" , "" , ModelStorage[IT_Title][IS_Default])
 
     for (new i = 0; i < 32; i++)
     {
@@ -81,8 +90,9 @@ public plugin_natives()
     register_native("set_user_current_model" , "native_SetUserModelPrimary");
 
     register_native("get_if_user_has_item" , "native_GetIfUserHasItem");
-    
     register_native("user_purchase_item" , "native_PurchaseItem");
+
+    register_native("push_say" , "native_RestoreSay");
 
     register_native("play_soundeffect" , "native_PlaySoundEffect");
 }
@@ -113,9 +123,8 @@ public plugin_precache()
 	}
     new last;
     new start;
-    entity_count = 512 - 220 - entity_count;
-
-    precache_model("models/ttt/v_crowbar.mdl");
+    entity_count = 512 - 220 - 8 - entity_count;
+    RemainModelSlot = entity_count;
 
     for (new i = 0;i < SoundEffct;i ++)
     {
@@ -148,6 +157,23 @@ public plugin_precache()
             new Handle:Query = Queries[mt];
             while (SQL_MoreResults(Query) != 0 && (entity_count > 0 || mt == IT_Title))
             {
+                if (Count == 3)
+                {
+                    InitItemData(m_id , price , name , vm_path , "" , ModelStacks[g_ModelCount]);
+                }
+                else
+                {
+                    if (last + 1 != precache_model(vm_path))
+                    {
+                        continue;
+                    }
+                    else{
+                        last ++;
+                    }
+                    entity_count -= 1;
+                    //precache_model(pm_path);
+                    InitItemData(m_id , price , name , vm_path , pm_path, ModelStacks[g_ModelCount]);
+                }
                 
                 m_id = SQL_ReadResult(Query , 0);
                 SQL_ReadResult(Query , 1 , name , 255);
@@ -157,17 +183,7 @@ public plugin_precache()
                 SQL_ReadResult(Query , 5 , pm_path , 255);
                 new c_count = ModelStorage[mt][IS_Count];
                 ModelStorage[mt][IS_List][c_count] = g_ModelCount;
-                if (Count == 3)
-                {
-                    InitItemData(m_id , price , name , vm_path , "" , ModelStacks[g_ModelCount]);
-                }
-                else
-                {
-                    last = precache_model(vm_path);
-                    entity_count -= 1;
-                    //precache_model(pm_path);
-                    InitItemData(m_id , price , name , vm_path , pm_path, ModelStacks[g_ModelCount]);
-                }
+
                 g_ModelCount += 1;
                 ModelStorage[mt][IS_Count] += 1;
                 SQL_NextRow(Query);
@@ -485,6 +501,19 @@ public native_PurchaseItem(plugin, params)
     return false;
 }
 
+public native_RestoreSay(plugin, params)
+{
+    if (params == 2)
+    {
+        new id = get_param(1);
+        new msg[256];
+        get_array(2 , msg , 256);
+        RestoreSay(id , msg);
+        return true;
+    }
+    return false;
+}
+
 public native_PlaySoundEffect(plugin, params)
 {
     if (params == 2)
@@ -648,7 +677,14 @@ public PurchaseItem(id , mdid , mt)
         }
 		if (userLeaf >= item_data[ID_Price])
 		{
-			DeltaLeafCoin(id , -item_data[ID_Price]);
+            if (mt == IT_Title)
+            {
+                DeltaExperience(id , -item_data[ID_Price]);
+            }
+            else
+            {
+                DeltaLeafCoin(id , -item_data[ID_Price]);
+            }
 			AddUserModelItem(id , item_data[ID_ID] , mt);
 			SetUserModelPrimary(id , item_data[ID_ID] , mt);
 			client_print_color(0 , id , "^4[雙葉]:^1富哥 ^3%s ^1花 ^4%d ^1购买了 ^4%s" , name , item_data[ID_Price] , item_data[ID_Name]);
@@ -678,7 +714,7 @@ public bool:SetExperience(id , value)
 public bool:DeltaExperience(id , delta)
 {
     new pos = GetUserPosition(id);
-    client_print_color(id , print_team_grey , "^4[雙葉]:^1Exp ^3%d ^1-> ^3%d ^3[%d]" , CurrentPlayers[pos][UD_Experience] , CurrentPlayers[pos][UD_Experience] + delta , delta);
+    client_print_color(id , print_team_grey , "^4[雙葉]:^1经验 ^3%d ^1-> ^3%d ^3[%d]" , CurrentPlayers[pos][UD_Experience] , CurrentPlayers[pos][UD_Experience] + delta , delta);
     if (pos != -1)
     {
         return SetExperience(id , CurrentPlayers[pos][UD_Experience] + delta);
@@ -723,7 +759,7 @@ public bool:DeltaLeafCoin(id , delta)
     new pos = GetUserPosition(id);
     if (pos != -1)
     {
-        client_print_color(id , print_team_red , "^4[雙葉]:^1LeafCoin ^3%d ^1-> ^3%d ^3[%d]" , CurrentPlayers[pos][UD_LeafCoin] , CurrentPlayers[pos][UD_LeafCoin] + delta , delta);
+        client_print_color(id , print_team_red , "^4[雙葉]:^1叶子币 ^3%d ^1-> ^3%d ^3[%d]" , CurrentPlayers[pos][UD_LeafCoin] , CurrentPlayers[pos][UD_LeafCoin] + delta , delta);
         if (SetLeafCoin(id , CurrentPlayers[pos][UD_LeafCoin] + delta) == true)
         {
             if (delta >= 0)
@@ -768,6 +804,17 @@ public GetExperience(id)
         return CurrentPlayers[pos][UD_Experience];
     }
     return -1;
+}
+
+public RestoreSay(id , msg[])
+{
+    new user_name[32];
+    get_user_name(id , user_name , 32);
+    new steamID[64];
+    get_user_authid(id , steamID , 64);
+    new Query[512];
+    formatex(Query , 512 , "insert into Message(SteamID , Message , Name) values('%s',replace('%s','\\','\\\\') , '%s')" , steamID , msg , user_name);
+    SQL_ThreadQuery(g_SqlTuple ,"SetUserInfoHandle" ,Query);
 }
 
 public Register(id)
@@ -846,17 +893,13 @@ public CheckFail(FailState , Error[] , Errcode)
 {
     if(FailState == TQUERY_CONNECT_FAILED)
     {
-        console_print(-1 , "Could not connect to SQL database.");
+        console_print(0 , "Could not connect to SQL database.");
         return false;
     }
     else if(FailState == TQUERY_QUERY_FAILED)
     {
-        console_print(-1 , "Query failed.");
-        return false;
-    }
-    if(Errcode)
-    {
-        console_print(-1 , "Error on query: %s",Error);
+        console_print(0 , "Query failed.");
+        console_print(0 , "Error on query: %s",Error);
         return false;
     }
     return true;
@@ -947,9 +990,16 @@ public SetUserModelPrimary(id , wp_id , mt)
             json_serial_to_string(Root , CurrentPlayers[pos][UD_StorageItems] , 2048);
             json_free(Root);
             SetUserItemData(id ,CurrentPlayers[pos][UD_StorageItems]);
-            new wp_pos = GetModelPos(wp_id , mt);
-            UpdateUserItemDataByPos(pos ,ModelStacks[ModelStorage[mt][IS_List][wp_pos]] , mt);
-            client_print_color(id ,id , "^4[雙葉]: ^3%s ^1给你装备好了" , ModelStacks[ModelStorage[mt][IS_List][wp_pos]][ID_Name]);
+            if (wp_id == -1)
+            {
+                UpdateUserItemDataByPos(pos ,ModelStorage[mt][IS_Default] , mt);
+            }
+            else
+            {
+                new wp_pos = GetModelPos(wp_id , mt);
+                UpdateUserItemDataByPos(pos ,ModelStacks[ModelStorage[mt][IS_List][wp_pos]] , mt);
+                client_print_color(id ,id , "^4[雙葉]: ^3%s ^1给你装备好了" , ModelStacks[ModelStorage[mt][IS_List][wp_pos]][ID_Name]);
+            }
             PlaySound(id , SE_Equip);
         }
     }
@@ -1137,9 +1187,6 @@ public LotteryBegin(const id)
     new rolleditem = qitems[rad];
     new name[32];
     get_user_name(id , name , 32);
-
-
-
 
     client_print_color(0 ,id , "^4[雙葉]: ^3%s ^1通过抽奖抽到了 ^3[%s]%s" , name , LotteryNames[maxaward] , ModelStacks[rolleditem][ID_Name]);
     //return qitems[rolleditem];

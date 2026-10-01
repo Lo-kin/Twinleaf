@@ -24,19 +24,24 @@ new cvar_tl_enable_tp , cvar_tl_enable_push , cvar_tl_tp_save_velocity;
 
 public plugin_init()
 {
-    register_plugin("Twinleaf 小工具", "1.0.0", "Tredam" , "github.com/Lo-kin" , "双叶服务器小工具");
+    register_plugin("Twinleaf 小工具",  PluginVersion , PluginAuthor , PluginLink, "双叶服务器小工具");
     
     cvar_tl_enable_tp = register_cvar("tl_enable_tp", "1");
     cvar_tl_enable_push = register_cvar("tl_enable_push", "1");
     cvar_tl_tp_save_velocity = register_cvar("tl_tp_save_velocity", "0");
 
-    register_clcmd("say ", "catch_command");
+    register_clcmd("say", "catch_command");
+    register_clcmd("say voicesound", "VoiceMenu");
+    register_clcmd("voice" , "VoiceCMD");
 
     RegisterHam(Ham_TraceAttack, "player", "fw_TraceAttack", 0);
     RegisterHam(Ham_Weapon_SecondaryAttack, "weapon_knife", "CrowbarAttack2_Check_Pre", 0);
 	RegisterHam(Ham_Weapon_PrimaryAttack, "weapon_knife", "CrowbarAttack2_Check_Post", 0);
+    register_impulse(100 , "FastMessage");
 
     set_task(60.0 , "OnlineReward" , 32196424 , "" , 0 , "b");
+
+    register_think("player" , GetPlayerInput)
 }
 
 public OnlineReward()
@@ -118,9 +123,13 @@ public native_utils(plugin , params)
 public catch_command(id)
 {
     new argString[128];
-	new argLength = read_argc();
 	read_args(argString , charsmax(argString));
 	remove_quotes(argString);
+	new argLength = read_argc();
+    if (equal(argString , "fv" , 2))
+    {
+        EmitVoice(id , str_to_num(argString[2]));
+    }
     if (strlen(argString) >= 1)
     {
         new item[ItemData];
@@ -131,6 +140,8 @@ public catch_command(id)
         get_user_name(id , user_name , 32);
         //play_soundeffect(0 , SE_Send_Message);
         client_print_color(0 , id , "^4[%s]^3%s^1 : %s" , tag , user_name , argString);
+        console_print(0 , "[%s]%s : %s" , tag , user_name , argString);
+        push_say(id , argString);
     }
     return PLUGIN_HANDLED_MAIN;
 }
@@ -235,7 +246,6 @@ public ReadLast(const id , Float:output[PositionInfo])
         }
         ReadCoord(id , output);
     }
-
 }
 
 public ReadCoord(const id , Float:output[PositionInfo])
@@ -352,7 +362,7 @@ new VotePointer = 0;
 public VoteRes(id)
 {
     new speakinfo[128];
-	for (new i = 0;i < VotePointer; i ++)
+	for (new i = 0;i < 32; i ++)
 	{
 		if (PlayerVote[i] == id)
 		{
@@ -392,70 +402,114 @@ public VoiceMenu(id)
     for (new i = 0;i < VoiceCount;i ++)
     {
         new voiceinfo[128];
-        formatex(voiceinfo , 128 , "[%d]%s" , VoiceItems[i][VI_Count] , VoiceItems[i][VI_Name]);
+        formatex(voiceinfo , 128 , "\d[#%d]\w%s" , i , VoiceItems[i][VI_Name]);
         menu_additem(menu , voiceinfo);
     }
     menu_display(id , menu , LastVoicePage[id]);
+    
+}
+
+public VoiceCMD(id)
+{
+    new arglen = read_argc();
+    if (arglen == 3)
+    {
+        new argHead[16];
+        new argBody[4]
+        read_argv(1 , argHead , 16);
+        read_argv(2 , argBody , 4);
+        if (equal(argHead , "fv"))
+        {
+            EmitVoice(id , str_to_num(argBody));
+        }
+    }
 }
 
 public VoiceHandler(id , menu , item)
 {
-    new Float:nowtime = get_gametime();
-    if (nowtime - LastVoiceTime[id] >= VoiceDuration)
-    {
-        LastVoiceTime[id] = nowtime;
-        menu_destroy(menu);
-        LastVoicePage[id] = item / 5;
-        if (item >= 0)
-        {
-            EmitVoice(id , item);
-            VoiceMenu(id);
-        }
-    }
-    else
-    {
-	    client_print_color(id , id , "^4[语音] ^1还有 ^4%.4f ^1秒才能使用" , nowtime - LastVoiceTime[id]);
-        VoiceMenu(id);
-    }
-    LastVoicePage[id] = item / 5;
+    new om , nm;
+    player_menu_info(id , om , nm , LastVoicePage[id]);
+    menu_destroy(menu);
+    EmitVoice(id , item);
+    VoiceMenu(id);
 }
 
 public EmitVoice(id , const voice_pos)
 {
-    if (voice_pos >= 0 && voice_pos < VoiceCount)
+    new Float:nowtime = get_gametime();
+    if (voice_pos >= 0 && voice_pos < VoiceCount && nowtime - LastVoiceTime[id] >= VoiceDuration)
     {
+        LastVoiceTime[id] = nowtime;
         emit_sound(id, CHAN_AUTO, VoiceItems[voice_pos][VI_Path], VOL_NORM, 0.001, 0, PITCH_NORM);
         VoiceItems[voice_pos][VI_Count] += 1;
         new name[32];
         get_user_name(id , name , 32);
         client_print_color(0 , id , "^4[语音]^3%s ^1%s" , name , VoiceItems[voice_pos][VI_Name]);
     }
+    else
+    {
+	    client_print_color(id , id , "^4[语音] ^1还有 ^4%.4f ^1秒才能使用" , nowtime - LastVoiceTime[id]);
+    }
 }
 
-//帮助
-new HelpText[6][128] = {
-    "欢迎加入双叶公园QQ群 :1098491779",
-    "按下 Y 输入 menu 打开服务器菜单",
-    "按下 Y 输入 help 打开TTT帮助信息",
-    "按下 Y 输入 /task 启动你画我猜",
-    "按下 Y 输入 /next 跳过当前你画我猜",
-    "按下 U 输入 你画我猜的答案"
+const FastMessageCount = 13;
+new FastMessageContent[FastMessageCount][] = {
+    "%s 是给!",
+    "%s 是挂!",
+    "%s 站我头上",
+    "%s 过来一下",
+    "%s 推我一下",
+    "%s 很可疑!",
+    "%s 蹲下",
+    "%s 香草泥",
+    "%s 你个坏逼!",
+    "%s 你真虾头!",
+    "%s 我喜欢你<3",
+    "%s JJCN",
+    "%s 铸币吧怎么这么菜啊"
 };
-
-enum _:ModHelp
-{
-    MH_DrawGuess,
-    MH_TTT,
-    HM_Ghost,
-}
-
-public ShowHelp(id)
-{
-    client_print_color(id , id , "^4[雙葉]:^1% s" , HelpText[random_num(0, 2)] );
-}
-
 
 public FastMessage(id)
 {
+    new aimID;
+    new aimBody;
+    new Float:aimDistance = get_user_aiming(id , aimID , aimBody);
+    if (aimID != 0 && aimBody != 0)
+    {
+        new targetName[32];
+        new message[128];
+        get_user_name(aimID , targetName , 32);
+    
+        new menu = menu_create("快速发言" , "FastMessageHandler");
+        for (new i = 0;i < FastMessageCount;i ++)
+        {
+            formatex(message , 128 , FastMessageContent[i] , targetName);
+            new arg[6];
+            format(arg , 6 , "%d" , aimID);
+            menu_additem(menu , message , arg);
+        }
+        menu_display(id , menu);
+    }
+    return PLUGIN_CONTINUE;
+}
 
+public FastMessageHandler(id , menu , item)
+{
+    new szData[6], szName[64];
+	new _access, item_callback;
+	menu_item_getinfo( menu, item, _access, szData,charsmax( szData ), szName,charsmax( szName ), item_callback);
+	new source = str_to_num(szData);
+    menu_destroy(menu);
+    if (item < 0 || item >= FastMessageCount)
+    {
+        return;
+    }
+    new name[32];
+    get_user_name(id , name , 32);
+    new targetName[32];
+    get_user_name(source , targetName , 32);
+    new message[128];
+    formatex(message , 128 , FastMessageContent[item] , targetName);
+    client_print_color(0 , id , "^4[快速发言]^3%s : ^1%s" , name , message);
+    
 }

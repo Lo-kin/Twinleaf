@@ -171,7 +171,7 @@ public plugin_init()
     SetUIColor(UIHelpMsg , {20 , 255 , 30});
     SetUIChannel(UIHelpMsg , 4);
     SetUIMessage(UIHelpMsg , "游戏规则");
-    SetUIPosition(UIHelpMsg , {0.1 , -1.0});
+    SetUIPosition(UIHelpMsg , {0.7 , -1.0});
 
     
     InitUI(UIAliveList);
