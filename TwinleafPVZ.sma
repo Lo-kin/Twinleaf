@@ -3,13 +3,17 @@
 #include <hamsandwich>
 #include <fakemeta>
 #include <xs>
+#include <pathfinder>
 #include <fakemeta_util>
+#include <Twinleaf>
 
 #define Block_size 64
 #define BlockStart_x 0
 #define BlockStart_y 0
 #define BlockCount_x 10
 #define BlockCount_y 5
+
+new g_iBeamSprite;
 
 enum _:SoundGroup
 {
@@ -86,7 +90,7 @@ enum _:BarrierInfo
     bool:BI_IsBreak,
     Float:BI_Position[3],
 }
-new BI_Class[32] = "func_wall";
+new BI_Class[32] = "func_wall_toggle";
 new BI_List[32][BarrierInfo];
 new BI_Count = 0;
 
@@ -104,7 +108,16 @@ enum _:MonsterInfo
     MI_KillReward,
     bool:MI_IsAlive,
     Float:MI_CreateTime,
-    MI_AliveTick
+    MI_AliveTick,
+    Array:MI_Path,
+    MI_PathPointer,
+    Float:MI_PathUpdateTime,
+    Float:MI_PathUpdateDuration,
+    MI_Target,
+    MI_Attempt,
+    MI_MaxAttempt,
+    Float:MI_LastJump,
+    Float:MI_JumpDuration,
 }
 new MonsterList[256][MonsterInfo];
 new MonsterCount = 0;
@@ -132,7 +145,7 @@ enum _:MonsterSpwanPoint
     MSP_EntID,
     Float:MSP_Position[3],
     MSP_SpwanCount,
-    MSP_Target
+    MSP_Target,
 }
 new MSP_Class[32] = "info_target";
 new MSP_List[32][MonsterSpwanPoint];
@@ -180,9 +193,11 @@ enum _:TotalWave
 }
 new TotalWaveInfo[TotalWave] = {30 , 0 , 30.0 , ...};
 
+new PairZmsB[][2] = {{1 , 1} , {2 , 2} , {3 , 3} , {5 , 4} , {6 , 5} , {8 , 6} , {9 , 7} , {10 , 8} , {11 , 9} , {12 , 10} , {13 , 11} , {14 , 12}};
+
 public plugin_init()
 {
-    register_plugin("Twinleaf LeafGuard",  PluginVersion , PluginAuthor , PluginLink , "");
+    register_plugin("Twinleaf LeafGuard",  "PluginVersion" , "PluginAuthor" , "PluginLink" , "");
     
     register_think("npc_zombie" , "npc_think");
     //RegisterHam(Ham_TakeDamage , "info_target" , "DmgZombie");
@@ -191,13 +206,85 @@ public plugin_init()
     register_clcmd("say sl" , "showlist");
     register_clcmd("say start" , "SpwanWave");
     register_clcmd("say weapon" , "WeaponStore");
+    register_clcmd("say killall" , "killallzm");
     register_forward(FM_TraceLine, "traceline_forward" , 1);
     set_task(0.1 , "ListenUserKey" , 1919810 , _ , _ ,"b");
     Init();
+	set_task(0.1,"checkstuck",0,"",0,"b")
+}
+
+public killallzm(id)
+{
+    for (new i = 0;i < 256;i ++)
+    {
+        if (MonsterList[i][MI_IsAlive] == true)
+        {
+            if (is_valid_ent(MonsterList[i][MI_EntID]))
+            {
+                ExecuteHamB(Ham_TakeDamage, MonsterList[i][MI_EntID] , id, id, 999999, DMG_CLUB);
+            }
+            MonsterList[i][MI_IsAlive] = false;
+            MonsterCount --;
+        }
+    }
+}
+
+new const Float:size[][3] = {
+	{0.0, 0.0, 1.0}, {0.0, 0.0, -1.0}, {0.0, 1.0, 0.0}, {0.0, -1.0, 0.0}, {1.0, 0.0, 0.0}, {-1.0, 0.0, 0.0}, {-1.0, 1.0, 1.0}, {1.0, 1.0, 1.0}, {1.0, -1.0, 1.0}, {1.0, 1.0, -1.0}, {-1.0, -1.0, 1.0}, {1.0, -1.0, -1.0}, {-1.0, 1.0, -1.0}, {-1.0, -1.0, -1.0},
+	{0.0, 0.0, 2.0}, {0.0, 0.0, -2.0}, {0.0, 2.0, 0.0}, {0.0, -2.0, 0.0}, {2.0, 0.0, 0.0}, {-2.0, 0.0, 0.0}, {-2.0, 2.0, 2.0}, {2.0, 2.0, 2.0}, {2.0, -2.0, 2.0}, {2.0, 2.0, -2.0}, {-2.0, -2.0, 2.0}, {2.0, -2.0, -2.0}, {-2.0, 2.0, -2.0}, {-2.0, -2.0, -2.0},
+	{0.0, 0.0, 3.0}, {0.0, 0.0, -3.0}, {0.0, 3.0, 0.0}, {0.0, -3.0, 0.0}, {3.0, 0.0, 0.0}, {-3.0, 0.0, 0.0}, {-3.0, 3.0, 3.0}, {3.0, 3.0, 3.0}, {3.0, -3.0, 3.0}, {3.0, 3.0, -3.0}, {-3.0, -3.0, 3.0}, {3.0, -3.0, -3.0}, {-3.0, 3.0, -3.0}, {-3.0, -3.0, -3.0},
+	{0.0, 0.0, 4.0}, {0.0, 0.0, -4.0}, {0.0, 4.0, 0.0}, {0.0, -4.0, 0.0}, {4.0, 0.0, 0.0}, {-4.0, 0.0, 0.0}, {-4.0, 4.0, 4.0}, {4.0, 4.0, 4.0}, {4.0, -4.0, 4.0}, {4.0, 4.0, -4.0}, {-4.0, -4.0, 4.0}, {4.0, -4.0, -4.0}, {-4.0, 4.0, -4.0}, {-4.0, -4.0, -4.0},
+	{0.0, 0.0, 5.0}, {0.0, 0.0, -5.0}, {0.0, 5.0, 0.0}, {0.0, -5.0, 0.0}, {5.0, 0.0, 0.0}, {-5.0, 0.0, 0.0}, {-5.0, 5.0, 5.0}, {5.0, 5.0, 5.0}, {5.0, -5.0, 5.0}, {5.0, 5.0, -5.0}, {-5.0, -5.0, 5.0}, {5.0, -5.0, -5.0}, {-5.0, 5.0, -5.0}, {-5.0, -5.0, -5.0}
+}
+new stuck[256];
+public checkstuck() 
+{
+    new monster
+	static Float:origin[3]
+	static Float:mins[3], hull
+	static Float:vec[3]
+	static o,i
+	for(i=0; i< 256; i++)
+    {
+        monster = MonsterList[i][MI_EntID];
+        if (is_valid_ent(monster) == false) continue;
+		pev(monster, pev_origin, origin)
+		hull = pev(monster, pev_flags) & FL_DUCKING ? HULL_HEAD : HULL_HUMAN
+		if (!is_hull_vacant(origin, hull,monster) && !(pev(monster,pev_solid) & SOLID_NOT))
+        {
+			++stuck[monster]
+			pev(monster, pev_mins, mins)
+			vec[2] = origin[2]
+			for (o=0; o < sizeof size; ++o) {
+				vec[0] = origin[0] - mins[0] * size[o][0]
+				vec[1] = origin[1] - mins[1] * size[o][1]
+				vec[2] = origin[2] - mins[2] * size[o][2]
+				if (is_hull_vacant(vec, hull,monster)) {
+					engfunc(EngFunc_SetOrigin, monster, vec)
+					set_pev(monster,pev_velocity,{0.0,0.0,0.0})
+					o = sizeof size
+				}
+			}
+		}
+		else
+		{
+			stuck[monster] = 0
+		}
+	}
+}
+
+stock bool:is_hull_vacant(const Float:origin[3], hull,id) {
+	static tr
+	engfunc(EngFunc_TraceHull, origin, origin, 0, hull, id, tr)
+	if (!get_tr2(tr, TR_StartSolid) || !get_tr2(tr, TR_AllSolid)) //get_tr2(tr, TR_InOpen))
+		return true
+	
+	return false
 }
 
 public plugin_precache()
 {
+    g_iBeamSprite = precache_model( "sprites/laserbeam.spr" );
     for (new i = 0;i < SoundStackCount;i ++)
     {
         new path[128];
@@ -226,7 +313,6 @@ public ListenUserKey()
                     PI_List[playerPos][PI_LastRestoreTime] = get_gametime();
                     for (new i = 0 ; i < BI_Count;i ++)
                     {
-                        console_print(0 , "On Using %d " ,playerPos);
                         if (EntityRange(ent , BI_List[i][BI_EntID]) <= 64.0)
                         {
                             DeltaEntityHealth(BI_List[i][BI_EntID] , ent , 20.0);
@@ -234,7 +320,6 @@ public ListenUserKey()
                             console_print(0 ,"match %d" , i);
                             break;
                         }
-                        
                     }
                 }
             }
@@ -261,10 +346,17 @@ public KilledZombie(this, idattacker, shouldgib)
                     break;
                 }
             }
+            ArrayDestroy(MonsterList[i][MI_Path]);
             MonsterList[i][MI_IsAlive] = false;
             MonsterCount --;
             break;
         }
+    }
+    new current_wave = TotalWaveInfo[TW_Current];
+    new aw_pos = TotalWaveInfo[TW_Wave][current_wave];
+    if (MonsterCount <= 0 && AW_List[aw_pos][AW_SpwanCount] <= AW_List[aw_pos][AW_CurrentSpwan])
+    {
+        PushWave();
     }
 }
 
@@ -281,87 +373,81 @@ public DmgZombie(this , wpn , idatk , Float:dmg , dmgbits)
 
 public traceline_forward(Float:start[3], Float:end[3], conditions, id, trace)
 {
-    if (find_player("k" , id) != 0)
+    if (id >= 1 && id <= 33)
     {
         new ent = get_tr2(trace, TR_pHit);
         if (ent >= 1)
         {
+            new Float:range = EntityRange(ent , id);
             new Float:health = GetEntityHealth(ent);
-            client_print(id , print_center , "Health %f" , health);
-            
+            client_print(id , print_center , "Health %f , distance %f" , health , range);
         }
     }
 }
 
 public Init()
 {
-    /*
-    for (new i = 0;i <= entity_count();i ++)
-    {
-        new cname[32];
-        pev(i , pev_classname , cname , 32);
-        console_print(0 , "(%s)" , cname);
-    }*/
+    new ClassName[32];
+    new NoPairCount = 0;
     for (new i = find_ent_by_class(-1 , MSP_Class);i != 0; i = find_ent_by_class(i , MSP_Class))
     {
-        new group[32];
-        entity_get_string(i , EV_SZ_targetname , group , 32);
-        new targetNum = str_to_num(group);
-        if (targetNum != 0)
+        new bool:PairFlag = false;
+        new zmspwan;
+        entity_get_string(i , EV_SZ_targetname , ClassName , 32);
+        if (strfind(ClassName , "zmspawn") == -1)
         {
-            pev(i , pev_origin , MSP_List[MSP_Count][MSP_Position]);
-            MSP_List[MSP_Count][MSP_EntID] = i;
-            MSP_List[MSP_Count][MSP_Target] = targetNum;
-            MSP_Count ++;
+            continue;
         }
-    }
-    for (new i = find_ent_by_class(-1 , BI_Class);i != 0; i = find_ent_by_class(i , BI_Class))
-    {
-        new group[32];
-        entity_get_string(i , EV_SZ_targetname , group , 32);
-        new targetNum = str_to_num(group); 
-        if (targetNum != 0)
+        zmspwan = str_to_num(ClassName[7]);
+        pev(i , pev_origin , MSP_List[MSP_Count][MSP_Position]);
+        MSP_List[MSP_Count][MSP_EntID] = i;
+        MSP_Count ++;
+        for (new j = find_ent_by_class(-1 , BI_Class);j != 0; j = find_ent_by_class(j , BI_Class))
         {
-            new Float:entmin[3];
-            new Float:entmax[3];
-            entity_get_vector(i , EV_VEC_absmin , entmin);
-            entity_get_vector(i , EV_VEC_size , entmax);
-            xs_vec_add_scaled(entmin , entmax , 0.5 , BI_List[BI_Count][BI_Position]);
-            BI_List[BI_Count][BI_EntID] = i;
-            BI_List[BI_Count][BI_Num] = targetNum;
-            BI_List[BI_Count][BI_MaxHealth] = 1000.0;
-            BI_List[BI_Count][BI_Health] = 100.0;
-            BI_List[BI_Count][BI_IsBreak] = false;
-            BI_Count ++;     
-        }
-    }
-    new no_comp_count = 0;
-    for (new i = 0;i < MSP_Count;i ++)
-    {
-        new bool:FindFlag = false
-        for (new j = 0;j < BI_Count;j ++)
-        {
-            if (MSP_List[i][MSP_Target] == BI_List[j][BI_Num])
+            new barricade;
+            entity_get_string(j , EV_SZ_targetname , ClassName , 32);
+            if (strfind(ClassName , "barricade") == -1)
             {
-                MSP_List[i][MSP_Target] = j;
-                FindFlag = true;
-                break;
+                continue;
+            }
+            barricade = str_to_num(ClassName[9]);
+            for (new k = 0;k < sizeof(PairZmsB);k ++)
+            {
+                if (PairZmsB[k][0] == zmspwan && PairZmsB[k][1] == barricade)
+                {
+                    remove_entity(j);
+                    continue;
+                    PairFlag = true;
+                    new Float:entmin[3];
+                    new Float:entmax[3];
+                    entity_get_vector(j , EV_VEC_absmin , entmin);
+                    entity_get_vector(j , EV_VEC_absmax , entmax);
+                    xs_vec_add(entmax , entmin , entmax);
+                    xs_vec_mul_scalar(entmax , 0.5 , BI_List[BI_Count][BI_Position]);
+                    BI_List[BI_Count][BI_EntID] = j;
+                    BI_List[BI_Count][BI_Num] = barricade;
+                    BI_List[BI_Count][BI_MaxHealth] = 1000.0;
+                    BI_List[BI_Count][BI_Health] = 100.0;
+                    BI_List[BI_Count][BI_IsBreak] = false;
+                    MSP_List[MSP_Count][MSP_Target] = j;
+                    BI_Count ++;
+                    
+                    break;
+                }
             }
         }
-        if (FindFlag == false)
+        if (PairFlag == false)
         {
-            no_comp_count ++;
-            MSP_List[i][MSP_Target] = -1;
-        } 
+            console_print(0 , "MSP %d has no barricade" , zmspwan);
+            NoPairCount++;
+        }
     }
-    console_print(0 , "MSP : %d , BI : %d , no_comp : %d" ,MSP_Count , BI_Count , no_comp_count);
-
+    console_print(0 , "MSP : %d , BI : %d , no_pair : %d" ,MSP_Count , BI_Count , NoPairCount);
     for (new i = 0;i < 32;i ++)
     {
         PI_List[i][PI_Money] = 0;
         PI_List[i][PI_IsEmpty] = true;
     }
-
     for (new i = 0 ; i < TotalWaveInfo[TW_Count] ; i ++)
     {
         AW_List[i][AW_WaitTime] = 2.0;
@@ -423,6 +509,7 @@ public client_disconnected(id , bool:drop , msg[] , len)
 
 public SpwanWave()
 {
+    /*
     new alive_players[32];
     new alive_count = 0;
     get_players(alive_players , alive_count , "a");
@@ -436,7 +523,7 @@ public SpwanWave()
             MonsterList[i][MI_IsAlive] = false;
         }
         return;
-    }
+    }*/
     new current_wave = TotalWaveInfo[TW_Current];
     if (current_wave >= 0 && current_wave < 64)
     {
@@ -453,33 +540,41 @@ public SpwanWave()
                     ShowHud(hudmsg);
                     EmitSound(0 , SG_WaveStart);
                 }
-                console_print(0 , "Wave %d / %d" , AW_List[aw_pos][AW_CurrentSpwan] + 1 , AW_List[aw_pos][AW_SpwanCount]); 
-                OnSpwan(AW_List[aw_pos][AW_SpwanCount] % BI_Count , AW_List[aw_pos][AW_SpwanTypeList][zm_pos]);
+                console_print(0 , "Wave in %d %d / %d" , AW_List[aw_pos][AW_SpwanCount] % MSP_Count, AW_List[aw_pos][AW_CurrentSpwan] + 1 , AW_List[aw_pos][AW_SpwanCount]); 
+                OnSpwan( AW_List[aw_pos][AW_SpwanCount] % MSP_Count , AW_List[aw_pos][AW_SpwanTypeList][zm_pos]); 
                 AW_List[aw_pos][AW_CurrentSpwan] += 1;
                 set_task(AW_List[aw_pos][AW_WaitTime] , "SpwanWave");
-            }
-            else
-            {
-                console_print(0 , "Total Wave %d / %d" , TotalWaveInfo[TW_Current] , TotalWaveInfo[TW_Count]); 
-                AW_List[aw_pos][AW_CurrentSpwan] = 0;
-                TotalWaveInfo[TW_Current] += 1;
-                set_task(TotalWaveInfo[TW_WaveGap] , "SpwanWave");
-                new hudmsg[128];
-                format(hudmsg , 128 , "%d / %d 已完成 , %f 秒后下一回合" , TotalWaveInfo[TW_Current] , TotalWaveInfo[TW_Count] , TotalWaveInfo[TW_WaveGap])
-                ShowHud(hudmsg);
-                EmitSound(0 , SG_WaveEnd);
             }
         }
     }
 }
 
+public PushWave()
+{
+    console_print(0 , "Total Wave %d / %d" , TotalWaveInfo[TW_Current] , TotalWaveInfo[TW_Count]);
+    new current_wave = TotalWaveInfo[TW_Current];
+    new aw_pos = TotalWaveInfo[TW_Wave][current_wave];
+    AW_List[aw_pos][AW_CurrentSpwan] = 0;
+    TotalWaveInfo[TW_Current] += 1;
+    set_task(TotalWaveInfo[TW_WaveGap] , "SpwanWave");
+    new hudmsg[128];
+    format(hudmsg , 128 , "%d / %d 已完成 , %f 秒后下一回合" , TotalWaveInfo[TW_Current] , TotalWaveInfo[TW_Count] , TotalWaveInfo[TW_WaveGap])
+    ShowHud(hudmsg);
+    EmitSound(0 , SG_WaveEnd);
+}
+
 public OnSpwan(MSP , type)
 {
     for (new i = 0;i < 128;i ++)
-    {
+    { 
         if (MonsterList[i][MI_IsAlive] == false)
         {
             new ent = CreateZombie(MSP_List[MSP][MSP_Position] , type);
+            if (MonsterCount >= 256)
+            {
+                remove_entity(MonsterList[255][MI_EntID]);
+                MonsterCount --;
+            }
             if (ent > 0)
             {
                 for (new j = 0;j < 256;j ++)
@@ -492,6 +587,11 @@ public OnSpwan(MSP , type)
                         MonsterList[j][MI_EntID] = ent;
                         MonsterList[j][MI_CreateTime] = get_gametime();
                         MonsterList[j][MI_TargetBarrier] = MSP_List[MSP][MSP_Target];
+                        MonsterList[j][MI_PathUpdateDuration] = 0.1;
+                        MonsterList[j][MI_PathUpdateTime] = 0.0;
+                        MonsterList[j][MI_Attempt] = 0;
+                        MonsterList[j][MI_MaxAttempt] = 5;
+                        MonsterList[j][MI_JumpDuration] = 5.0;
                         break;
                     }
                 }
@@ -514,7 +614,7 @@ public CreateZombie(Float:origin[3] , type)
     entity_set_origin(ent , origin);
     entity_set_float(ent , EV_FL_takedamage , DAMAGE_AIM);
     entity_set_float(ent , EV_FL_health , MT_List[type][MI_Health]);
-    entity_set_float(ent , EV_FL_gravity , 800.0);
+    entity_set_float(ent , EV_FL_gravity , 400.0);
 
     entity_set_string(ent , EV_SZ_classname , "npc_zombie");
     entity_set_string(ent , EV_SZ_targetname , MT_NameList[type]);
@@ -522,18 +622,14 @@ public CreateZombie(Float:origin[3] , type)
     entity_set_int(ent , EV_INT_solid , SOLID_SLIDEBOX);
     entity_set_int(ent , EV_INT_movetype , MOVETYPE_STEP);
     
-    entity_set_byte(ent,EV_BYTE_controller1,125);
-    entity_set_byte(ent,EV_BYTE_controller2,125);
-    entity_set_byte(ent,EV_BYTE_controller3,125);
-    entity_set_byte(ent,EV_BYTE_controller4,125);
-    
     new Float:maxs[3] = {16.0,16.0,36.0};
     new Float:mins[3] = {-16.0,-16.0,-36.0};
     entity_set_size(ent,mins,maxs);
 
-    entity_set_float(ent,EV_FL_animtime,2.0);
-    entity_set_float(ent,EV_FL_framerate,1.0);
-    entity_set_int(ent,EV_INT_sequence,4);
+	entity_set_float(ent, EV_FL_animtime, get_gametime());
+	entity_set_float(ent, EV_FL_frame, 0.0);
+	entity_set_float(ent, EV_FL_framerate,  1.0);
+	entity_set_int(ent, EV_INT_sequence, 1.0);
 
     entity_set_float(ent,EV_FL_nextthink,halflife_time() + 0.01);
     drop_to_floor(ent);
@@ -555,26 +651,46 @@ public npc_think(iEnt)
     {
         if (iEnt == MonsterList[i][MI_EntID])
         {
+            /*
             if (MonsterList[i][MI_IsAlive] == false)
             {
                 return;
             }
-            if (MonsterList[i][MI_TargetBarrier] >= 0 && MonsterList[i][MI_TargetBarrier] < BI_Count)
+            new target_b = 0;
+            for (new j = 0;j < BI_Count;j ++)
             {
-                new target_b = MonsterList[i][MI_TargetBarrier];
-                if (BI_List[target_b][BI_IsBreak] == false)
+                if (MonsterList[i][MI_TargetBarrier] == BI_List[j][BI_EntID])
                 {
-                    targetid = BI_List[target_b][BI_EntID];
-                    xs_vec_copy(BI_List[target_b][BI_Position] , targetPos);
+                    target_b = j;
+                    break;
                 }
             }
+            if (BI_List[target_b][BI_IsBreak] == false)
+            {
+                GetEntityOrigin(MonsterList[i][MI_TargetBarrier] , targetPos);
+                targetid = MonsterList[i][MI_TargetBarrier];
+            }*/
             MPos = i;
         }
     }
     if (MPos != -1)
     {
-        entity_set_aim(iEnt, targetPos , MonsterList[MPos][MI_Speed]);
-        ZombieTryAttack(MPos , targetid);
+        new Float:ctime = get_gametime();
+        new bool:changed = false;
+        if (MonsterList[MPos][MI_Target] == targetid)
+        {
+            changed = true;
+        }
+        NPC_Pather(MPos , targetid,  changed , targetPos);
+        if (ctime - MonsterList[MPos][MI_LastJump] >= MonsterList[MPos][MI_JumpDuration])
+        {
+            entity_set_aim(iEnt, targetPos , MonsterList[MPos][MI_Speed] , true);
+        }
+        else 
+        {
+            entity_set_aim(iEnt, targetPos , MonsterList[MPos][MI_Speed] , false);
+        }
+        ZombieTryAttack(MPos , targetid); 
         
         MonsterList[MPos][MI_AliveTick] ++;
         if (MonsterList[MPos][MI_AliveTick] % 500 == 0)
@@ -590,7 +706,7 @@ public npc_think(iEnt)
     }
 }
 
-entity_set_aim(ent, const Float:origin[3] , const Float:velocity) 
+entity_set_aim(ent, const Float:origin[3] , const Float:velocity , bool:IsJump) 
 { 
     static Float:ent_origin[3], Float:angles[3];
     
@@ -607,6 +723,10 @@ entity_set_aim(ent, const Float:origin[3] , const Float:velocity)
     static Float: Direction[3] 
     angle_vector(angles, ANGLEVECTOR_FORWARD, Direction) 
     xs_vec_mul_scalar(Direction, velocity, Direction)
+    if (IsJump == true)
+    {
+        Direction[2] += 800.0;
+    }
     set_pev(ent, pev_velocity, Direction)
     
     // Run Sequence
@@ -625,7 +745,10 @@ get_closest_player(ent)
 {
     new iPlayers[32], iNum;
     get_players(iPlayers, iNum, "a");
-
+    if (iNum == 1)
+    {
+        return iPlayers[0];
+    }
     new iClosestPlayer = 0, Float:flClosestDist = 9999.0;
     new iPlayer, Float:flDist;
     
@@ -845,4 +968,129 @@ public GetPlayer(id)
         }
     }
     return -1;
+}
+
+new Float:theta = 64.0;
+public NPC_Pather(mid , targetID , bool:ChangeTarget , Float:out[3])
+{
+    new Float:start[3];
+    new Float:end[3];
+    new Float:TargetPos[3];
+    new Float:selfPos[3];
+    new Float:HullSize[3] = {16.0 , 16.0 , 16.0};
+    new Float:current_time = get_gametime();
+    new Float:tmpa[3];
+    new float:tmpb[3];
+    pev(targetID , pev_origin ,TargetPos);
+    pev(MonsterList[mid][MI_EntID] , pev_origin , selfPos);
+    if (current_time - MonsterList[mid][MI_PathUpdateTime] >= MonsterList[mid][MI_PathUpdateDuration])
+    {
+        new Array:new_path;
+        if (GeneratePath(selfPos , TargetPos , new_path) == true)
+        {
+            if (ArraySize(new_path) >= 0)
+            {
+                new bool:update = true;
+
+                if (Invalid_Array != MonsterList[mid][MI_Path])
+                {
+                    ArrayGetArray(new_path , 0 , start , 3);
+                    ArrayGetArray(MonsterList[mid][MI_Path] , MonsterList[mid][MI_PathPointer] , end , 3);
+                    if (!xs_vec_equal(start , end))
+                    {
+                        update = false;   
+                    }
+                    else
+                    {
+                        ArrayDestroy(MonsterList[mid][MI_Path]);
+                    }
+                }
+                if (update == true)
+                {
+                    MonsterList[mid][MI_PathUpdateTime] = current_time;
+                    ArrayPushArray(new_path , TargetPos , 3);
+                    ArrayInsertArrayBefore(new_path , 0 , selfPos);
+                    for (new i = 0;i < ArraySize(new_path) - 1 ;i ++)
+                    {
+                        ArrayGetArray(new_path , i , start , 3);
+                        for (new j = i + 1;j < ArraySize(new_path) - 1;j ++)
+                        {
+                            ArrayGetArray(new_path , j , end , 3);
+                            /*
+                            xs_vec_add(tmpa , HullSize , tmpa);
+                            xs_vec_sub(tmpb , HullSize , tmpb);
+                            xs_vec_add(tmpa , start , tmpa);
+                            xs_vec_add(tmpb , end , tmpb);
+                            */
+                            if (!IsWallBetween(start , end))
+                            {
+                                ArrayDeleteItem(new_path , j);
+                                break;
+                            }
+                        
+                        }
+                    }
+
+                    MonsterList[mid][MI_PathPointer] = 0;
+                    MonsterList[mid][MI_Path] = new_path; 
+                }
+            }
+            else
+            {
+                ArrayDestroy(new_path);
+            }
+        }
+    }
+    if (Invalid_Array != MonsterList[mid][MI_Path])
+    {
+        ArrayGetArray(MonsterList[mid][MI_Path] , MonsterList[mid][MI_PathPointer] , TargetPos , 3);
+        if (xs_vec_distance(selfPos , TargetPos) <= theta)
+        {
+            MonsterList[mid][MI_PathPointer] ++;
+            if (MonsterList[mid][MI_PathPointer] >= ArraySize(MonsterList[mid][MI_Path]))
+            {
+                MonsterList[mid][MI_Attempt] ++;
+                if (MonsterList[mid][MI_Attempt] >= MonsterList[mid][MI_MaxAttempt])
+                {
+                    MonsterList[mid][MI_Attempt] = 0;
+                    ArrayDestroy(MonsterList[mid][MI_Path]);
+                    return;
+                }
+                pev(targetID , pev_origin ,TargetPos);
+                MonsterList[mid][MI_PathPointer] --;
+                ArrayPushArray(MonsterList[mid][MI_Path] , TargetPos , 3);
+            }
+        }
+        /*
+        ArrayGetArray(MonsterList[mid][MI_Path] , MonsterList[mid][MI_PathPointer] , out , 3);
+        for (new i = 0;i < ArraySize(MonsterList[mid][MI_Path]) - 1;i ++)
+        {
+            ArrayGetArray(MonsterList[mid][MI_Path] , i , start , 3);
+            ArrayGetArray(MonsterList[mid][MI_Path] , i + 1 , end , 3);
+            beam(start , end , 0.3);
+        }*/
+    }
+}
+
+stock beam(Float:origin1[3], Float:origin2[3], Float:seconds) {
+	message_begin(MSG_BROADCAST ,SVC_TEMPENTITY);
+	write_byte(TE_BEAMPOINTS);
+	write_coord(floatround(origin1[0]));	// start position
+	write_coord(floatround(origin1[1]));
+	write_coord(floatround(origin1[2]));
+	write_coord(floatround(origin2[0]));	// end position
+	write_coord(floatround(origin2[1]));
+	write_coord(floatround(origin2[2]));
+	write_short(g_iBeamSprite);	// sprite index
+	write_byte(0);	// starting frame
+	write_byte(10);	// frame rate in 0.1's
+	write_byte(floatround(seconds*10));	// life in 0.1's
+	write_byte(10);	// line width in 0.1's
+	write_byte(1);	// noise amplitude in 0.01's
+	write_byte(255);	// Red
+	write_byte(0);	// Green
+	write_byte(0);	// Blue
+	write_byte(127);	// brightness
+	write_byte(10);	// scroll speed in 0.1's
+	message_end();
 }

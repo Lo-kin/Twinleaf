@@ -6,6 +6,7 @@
 #include <sqlx>
 #include <json>
 #include <engine>
+#include <multimod_manager_natives>
 
 enum _:IntField
 {
@@ -157,24 +158,6 @@ public plugin_precache()
             new Handle:Query = Queries[mt];
             while (SQL_MoreResults(Query) != 0 && (entity_count > 0 || mt == IT_Title))
             {
-                if (Count == 3)
-                {
-                    InitItemData(m_id , price , name , vm_path , "" , ModelStacks[g_ModelCount]);
-                }
-                else
-                {
-                    if (last + 1 != precache_model(vm_path))
-                    {
-                        continue;
-                    }
-                    else{
-                        last ++;
-                    }
-                    entity_count -= 1;
-                    //precache_model(pm_path);
-                    InitItemData(m_id , price , name , vm_path , pm_path, ModelStacks[g_ModelCount]);
-                }
-                
                 m_id = SQL_ReadResult(Query , 0);
                 SQL_ReadResult(Query , 1 , name , 255);
                 ModelStacks[g_ModelCount][ID_Quality] = SQL_ReadResult(Query , 2);
@@ -183,7 +166,17 @@ public plugin_precache()
                 SQL_ReadResult(Query , 5 , pm_path , 255);
                 new c_count = ModelStorage[mt][IS_Count];
                 ModelStorage[mt][IS_List][c_count] = g_ModelCount;
-
+                if (Count == 3)
+                {
+                    InitItemData(m_id , price , name , vm_path , "" , ModelStacks[g_ModelCount]);
+                }
+                else
+                {
+                    last = precache_model(vm_path);
+                    entity_count -= 1;
+                    //precache_model(pm_path);
+                    InitItemData(m_id , price , name , vm_path , pm_path, ModelStacks[g_ModelCount]);
+                }
                 g_ModelCount += 1;
                 ModelStorage[mt][IS_Count] += 1;
                 SQL_NextRow(Query);

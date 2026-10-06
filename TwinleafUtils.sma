@@ -6,6 +6,7 @@
 #include <xs>
 #include <json>
 #include <Twinleaf>
+#include <multimod_manager_natives>
 
 #define CoordLength 512
 
@@ -37,11 +38,17 @@ public plugin_init()
     RegisterHam(Ham_TraceAttack, "player", "fw_TraceAttack", 0);
     RegisterHam(Ham_Weapon_SecondaryAttack, "weapon_knife", "CrowbarAttack2_Check_Pre", 0);
 	RegisterHam(Ham_Weapon_PrimaryAttack, "weapon_knife", "CrowbarAttack2_Check_Post", 0);
-    register_impulse(100 , "FastMessage");
-
+    register_clcmd("radio3", "FastMessage");
+    new cmodtag[32];
+    mm_get_mod_tag(mm_get_currentmod_id(), cmodtag, 32)
+    console_print(0 , "[TwinleafUtils] 当前游戏模式: %s" , cmodtag);
+    if (equal(cmodtag, "ttt") == false)
+    {
+        register_impulse(100 , "FastMessage");
+    }
     set_task(60.0 , "OnlineReward" , 32196424 , "" , 0 , "b");
 
-    register_think("player" , GetPlayerInput)
+    register_think("player" , "GetPlayerInput");
 }
 
 public OnlineReward()
@@ -430,8 +437,11 @@ public VoiceHandler(id , menu , item)
     new om , nm;
     player_menu_info(id , om , nm , LastVoicePage[id]);
     menu_destroy(menu);
-    EmitVoice(id , item);
-    VoiceMenu(id);
+    if (item >= 0)
+    {
+        EmitVoice(id , item);
+        VoiceMenu(id);
+    }
 }
 
 public EmitVoice(id , const voice_pos)

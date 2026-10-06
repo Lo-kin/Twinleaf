@@ -121,9 +121,10 @@ public GetPlayerInput(id)
     {
         return PLUGIN_CONTINUE;
     }
-    PlayerInput[id][IK_Use] = GetStatus(pev(id , pev_button) & IN_USE , PlayerInput[id][IK_Use]);
-    PlayerInput[id][IK_Reload] = GetStatus(pev(id , pev_button) & IN_RELOAD , PlayerInput[id][IK_Reload]);
-    PlayerInput[id][IK_Alt1] = GetStatus(pev(id , pev_button) & IN_ALT1 , PlayerInput[id][IK_Alt1]);
+    for (new i = 0; i < IN_SCORE; i++)
+    {
+        PlayerInput[id][i] = GetStatus(pev(id , pev_button) & i , pev(id , pev_oldbuttons) & i);
+    }
 }
 
 native show_mma_list(const id);
@@ -181,3 +182,40 @@ native play_soundeffect(const id , const se);
 native tl_utils(const id);
 
 native push_say(const id , msg[]);
+
+public bool:IsWallBetween( const Float:flThis[ ], const Float:flOther[ ] )
+{
+	new iHit = -1;
+	
+	new Float:flDistance;
+	new Float:flTotalDistance;
+	
+	new Float:flStart[ 3 ];
+	new Float:flResult[ 3 ];
+	
+	new Float:flEnd[ 3 ];
+	
+	xs_vec_copy( flThis, flStart );
+	xs_vec_copy( flOther, flEnd );
+	
+	flTotalDistance = xs_vec_distance( flThis, flEnd );
+	
+	do
+	{
+		iHit = trace_line( iHit, flStart, flEnd, flResult );
+		flDistance = ( xs_vec_distance( flResult, flThis ) + 16.0 );
+		
+		if( ( flTotalDistance - flDistance ) <= 16.0 )
+		{
+			return false;
+		}
+		
+		xs_vec_sub( flEnd, flResult, flStart );
+		xs_vec_normalize( flStart, flStart );
+		xs_vec_mul_scalar( flStart, flDistance, flStart );
+		xs_vec_add( flThis, flStart, flStart );
+	}
+	while( iHit > 0 )
+	
+	return true;
+}
